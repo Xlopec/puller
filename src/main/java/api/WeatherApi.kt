@@ -1,7 +1,10 @@
 package api
 
 import com.google.gson.Gson
+import io.reactivex.Flowable
 import io.reactivex.Single
+import io.reactivex.functions.BiFunction
+import model.Location
 import model.Weather
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
@@ -13,7 +16,7 @@ import retrofit2.http.Query
 import java.util.concurrent.TimeUnit
 
 
-class WeatherProvider(private val apiKey: String) {
+class WeatherProvider(private val apiKey: String, private val maxCallRate: Int) {
 
     private interface WeatherApi {
         // see doc ref https://openweathermap.org/current
@@ -43,6 +46,24 @@ class WeatherProvider(private val apiKey: String) {
                 .create(WeatherApi::class.java)
     }
 
-    fun fetchWeather(lat: Double, lon: Double) = api.fetchWeather(lat, lon, apiKey)
+    fun fetchWeather(location: Location) = api.fetchWeather(location.lat, location.lon, apiKey)
+
+    fun fetchWeather(locations: Collection<Location>): Single<List<Weather>> {
+        val delay = 60_000L / maxCallRate
+
+        return Single.concat(locations.map { location ->
+            fetchWeather(location)
+                    .doOnSuccess { println("Processed %.2f%%".format(100 * (locations.indexOf(location) + 1) / locations.size.toDouble())) }
+                    .delay(delay, TimeUnit.MILLISECONDS)
+                    .retryWhen { errors ->
+                        errors.zipWith(Flowable.range(1, 5), BiFunction<Throwable, Int, Int> { _, retry -> retry })
+                                .doOnComplete { println("Giving up job...") }
+                                .flatMap { retryCount ->
+                                    Flowable.timer(delay * retryCount, TimeUnit.MILLISECONDS)
+                                            .doOnNext { println("Retry $retryCount, for location $location. Await time: ${(delay * retryCount) / 1000L} seconds") }
+                                }
+                    }
+        }).toList(locations.size)
+    }
 
 }
