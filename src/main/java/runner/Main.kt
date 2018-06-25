@@ -34,7 +34,7 @@ private data class Args(val input: File, val apiKey: String, val outFile: File, 
 
 fun main(args: Array<String>) {
 
-    require(args.size in 2..3) {
+    require(args.size in 2..4) {
         "Invalid input arguments amount, 0 - input file, 1 - api key, 2 - out file, 3 - max calls per minute (optional)"
     }
 
